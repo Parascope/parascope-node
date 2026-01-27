@@ -1,0 +1,1411 @@
+openapi: 3.0.3
+info:
+  title: Parascope Cloud API
+  version: 1.0.0
+  description: |
+    MCP-friendly REST API for Parascope Cloud workspace management.
+
+    ## Authentication
+
+    Two authentication methods are supported:
+
+    1. **JWT Tokens** (short-lived, 30 days):
+       - Login with email/password to get JWT
+       - Use for user sessions
+
+    2. **Personal Access Tokens** (long-lived):
+       - Create via API with existing auth
+       - Format: `pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+       - Use for MCP integrations and automation
+
+    Both methods use Bearer token authentication:
+    ```
+    Authorization: Bearer <token>
+    ```
+
+  contact:
+    name: Parascope Support
+    url: https://parascope.dev
+
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Development server
+  - url: https://api.parascope.dev/api/v1
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: Session and token management
+  - name: Tokens
+    description: Personal Access Token management
+  - name: Workspaces
+    description: Workspace CRUD operations
+  - name: Scopes
+    description: Scope management within workspaces
+  - name: Cards
+    description: Card management and bulk operations
+  - name: Organization
+    description: Drag-and-drop organization
+  - name: GitHub
+    description: GitHub integration endpoints
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT or PAT
+      description: JWT token or Personal Access Token (pat_xxxxx)
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+        - code
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+        code:
+          type: integer
+          description: HTTP status code
+        details:
+          type: object
+          description: Additional error details (validation errors, etc.)
+
+    Pagination:
+      type: object
+      properties:
+        limit:
+          type: integer
+          description: Number of items returned
+        offset:
+          type: integer
+          description: Offset of first item
+        has_more:
+          type: boolean
+          description: Whether more items exist
+        next_offset:
+          type: integer
+          nullable: true
+          description: Offset for next page (null if no more)
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+
+    Session:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT token valid for 30 days
+        user:
+          $ref: '#/components/schemas/User'
+
+    PersonalAccessToken:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: User-defined token name
+        token:
+          type: string
+          description: Plain token (ONLY returned on creation)
+          example: pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          pattern: '^[a-zA-Z0-9\-_]+$'
+          description: URL-safe workspace name
+        is_default:
+          type: boolean
+        sharing_type:
+          type: string
+          enum: [private, internal, public]
+        owner_id:
+          type: string
+          format: uuid
+        scopes_count:
+          type: integer
+          description: Number of scopes (only in detailed view)
+        cards_count:
+          type: integer
+          description: Number of cards (only in detailed view)
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Scope:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        is_default:
+          type: boolean
+        position:
+          type: integer
+          description: Order position for display
+        cards_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Card:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspace_id:
+          type: string
+          format: uuid
+        scope_id:
+          type: string
+          format: uuid
+        github_repo_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Optional GitHub repository reference
+        name:
+          type: string
+        content:
+          type: string
+          description: Card content (YAML, JSON, or text)
+        position:
+          type: integer
+        github_repo:
+          $ref: '#/components/schemas/GithubRepoSummary'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    GithubNamespace:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        installation_id:
+          type: string
+        name:
+          type: string
+        github_account_type:
+          type: string
+          enum: [User, Organization]
+        github_account_login:
+          type: string
+        repos_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    GithubRepo:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        github_namespace_id:
+          type: string
+          format: uuid
+        repository_id:
+          type: integer
+        repository_name:
+          type: string
+        repository_full_name:
+          type: string
+        default_branch:
+          type: string
+        sync_state:
+          type: string
+          enum: [unknown, good_config, bad_config, no_config, failed]
+        last_synced_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    GithubRepoSummary:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        repository_name:
+          type: string
+        repository_full_name:
+          type: string
+        sync_state:
+          type: string
+
+paths:
+  /sessions:
+    post:
+      tags:
+        - Authentication
+      summary: Create session (login)
+      description: Authenticate with email and password to receive a JWT token
+      operationId: createSession
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '201':
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Session'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      tags:
+        - Authentication
+      summary: Destroy session (logout)
+      description: Invalidate current session
+      operationId: destroySession
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tokens:
+    get:
+      tags:
+        - Tokens
+      summary: List personal access tokens
+      description: Get all personal access tokens for current user (without plain token values)
+      operationId: listTokens
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of tokens
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PersonalAccessToken'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Tokens
+      summary: Create personal access token
+      description: |
+        Create a new personal access token. The plain token is returned ONLY in this response
+        and cannot be retrieved later. Store it securely.
+      operationId: createToken
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: Descriptive name for the token
+                  example: MCP on laptop
+                expires_at:
+                  type: string
+                  format: date-time
+                  description: Optional expiration date
+      responses:
+        '201':
+          description: Token created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PersonalAccessToken'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /tokens/{id}:
+    delete:
+      tags:
+        - Tokens
+      summary: Revoke personal access token
+      description: Permanently revoke a token (cannot be undone)
+      operationId: revokeToken
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Token revoked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      revoked:
+                        type: boolean
+                      revoked_at:
+                        type: string
+                        format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /workspaces:
+    get:
+      tags:
+        - Workspaces
+      summary: List workspaces
+      description: Get all workspaces accessible to current user (owned and shared)
+      operationId: listWorkspaces
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          description: Search query for workspace name
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Number of items to return (max 100)
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          description: Offset for pagination
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of workspaces
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Workspace'
+                  meta:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Workspaces
+      summary: Create workspace
+      description: Create a new workspace (automatically creates a default scope)
+      operationId: createWorkspace
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - workspace
+              properties:
+                workspace:
+                  type: object
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                      pattern: '^[a-zA-Z0-9\-_]+$'
+                    description:
+                      type: string
+                    sharing_type:
+                      type: string
+                      enum: [private, internal, public]
+                      default: private
+      responses:
+        '201':
+          description: Workspace created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Workspace'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /workspaces/{id}:
+    get:
+      tags:
+        - Workspaces
+      summary: Get workspace
+      description: Get detailed workspace information
+      operationId: getWorkspace
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workspace details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Workspace'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Workspaces
+      summary: Update workspace
+      description: Update workspace properties (owner only)
+      operationId: updateWorkspace
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - workspace
+              properties:
+                workspace:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    sharing_type:
+                      type: string
+                      enum: [private, internal, public]
+      responses:
+        '200':
+          description: Workspace updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Workspace'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    delete:
+      tags:
+        - Workspaces
+      summary: Delete workspace
+      description: |
+        Delete workspace with conditions:
+        - Cannot delete default workspace
+        - Can delete empty workspace (no cards)
+        - Can delete recent workspace (<1 hour old) even with cards
+        - Cannot delete old workspace (>1 hour) with cards
+      operationId: deleteWorkspace
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workspace deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      deleted:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Cannot delete workspace
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+                  - type: object
+                    properties:
+                      details:
+                        type: object
+                        properties:
+                          cards_count:
+                            type: integer
+                          created_at:
+                            type: string
+                            format: date-time
+                          age_in_minutes:
+                            type: integer
+
+  /workspaces/{workspace_id}/scopes:
+    get:
+      tags:
+        - Scopes
+      summary: List scopes in workspace
+      description: Get all scopes in a workspace, ordered by position
+      operationId: listScopes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workspace_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of scopes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Scope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /scopes:
+    post:
+      tags:
+        - Scopes
+      summary: Create scope
+      description: Create a new scope in a workspace (position auto-incremented)
+      operationId: createScope
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workspace_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - scope
+              properties:
+                scope:
+                  type: object
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    position:
+                      type: integer
+      responses:
+        '201':
+          description: Scope created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Scope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /scopes/{id}:
+    patch:
+      tags:
+        - Scopes
+      summary: Update scope
+      description: Update scope properties (workspace owner only)
+      operationId: updateScope
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - scope
+              properties:
+                scope:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    position:
+                      type: integer
+      responses:
+        '200':
+          description: Scope updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Scope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    delete:
+      tags:
+        - Scopes
+      summary: Delete scope
+      description: |
+        Delete scope (cannot delete default scope).
+        All cards are moved to default scope before deletion.
+      operationId: deleteScope
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Scope deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      deleted:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Cannot delete default scope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /workspaces/{workspace_id}/cards:
+    get:
+      tags:
+        - Cards
+      summary: List cards in workspace
+      description: Get all cards in a workspace with optional filtering
+      operationId: listCards
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workspace_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: scope_id
+          in: query
+          description: Filter by scope
+          schema:
+            type: string
+            format: uuid
+        - name: q
+          in: query
+          description: Search in card names
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of cards
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Card'
+                  meta:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /cards:
+    post:
+      tags:
+        - Cards
+      summary: Create card
+      description: |
+        Create a new card in a workspace.
+        github_repo_id is optional - cards can exist without GitHub integration.
+      operationId: createCard
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workspace_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                content:
+                  type: string
+                scope_id:
+                  type: string
+                  format: uuid
+                  description: If not provided, uses default scope
+                github_repo_id:
+                  type: string
+                  format: uuid
+                  description: Optional GitHub repository reference
+                position:
+                  type: integer
+                  description: If not provided, auto-incremented
+      responses:
+        '201':
+          description: Card created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Card'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /cards/{id}:
+    patch:
+      tags:
+        - Cards
+      summary: Update card
+      description: Update card properties (workspace owner only)
+      operationId: updateCard
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                content:
+                  type: string
+                scope_id:
+                  type: string
+                  format: uuid
+                position:
+                  type: integer
+      responses:
+        '200':
+          description: Card updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Card'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    delete:
+      tags:
+        - Cards
+      summary: Delete card
+      description: Delete a card (workspace owner only)
+      operationId: deleteCard
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Card deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      deleted:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /cards/bulk:
+    post:
+      tags:
+        - Cards
+      summary: Bulk card operations
+      description: Perform multiple create/update/delete operations in one request
+      operationId: bulkCards
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workspace_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                operations:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - action
+                    properties:
+                      action:
+                        type: string
+                        enum: [create, update, delete]
+                      id:
+                        type: string
+                        format: uuid
+                        description: Required for update/delete
+                      github_repo_id:
+                        type: string
+                        format: uuid
+                      scope_id:
+                        type: string
+                        format: uuid
+                      name:
+                        type: string
+                      content:
+                        type: string
+                      position:
+                        type: integer
+                      attributes:
+                        type: object
+                        description: For update operations
+                        properties:
+                          name:
+                            type: string
+                          content:
+                            type: string
+                          scope_id:
+                            type: string
+                            format: uuid
+                          position:
+                            type: integer
+      responses:
+        '200':
+          description: Bulk operations completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        action:
+                          type: string
+                        success:
+                          type: boolean
+                        data:
+                          $ref: '#/components/schemas/Card'
+                        id:
+                          type: string
+                          format: uuid
+                        error:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /workspaces/{workspace_id}/organize:
+    patch:
+      tags:
+        - Organization
+      summary: Reorganize workspace
+      description: |
+        Update positions of multiple scopes and cards in one atomic operation.
+        Used for drag-and-drop reordering.
+      operationId: organizeWorkspace
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workspace_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scopes:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - id
+                      - position
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      position:
+                        type: integer
+                cards:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - id
+                      - position
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      scope_id:
+                        type: string
+                        format: uuid
+                        description: Move card to different scope
+                      position:
+                        type: integer
+      responses:
+        '200':
+          description: Organization updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                      scopes_updated:
+                        type: integer
+                      cards_updated:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /github/namespaces:
+    get:
+      tags:
+        - GitHub
+      summary: List GitHub namespaces
+      description: Get all GitHub App installations accessible to current user
+      operationId: listGithubNamespaces
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of GitHub namespaces
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GithubNamespace'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /github/repos:
+    get:
+      tags:
+        - GitHub
+      summary: List GitHub repositories
+      description: Get all repositories from user's GitHub App installations
+      operationId: listGithubRepos
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: namespace_id
+          in: query
+          description: Filter by GitHub namespace
+          schema:
+            type: string
+            format: uuid
+        - name: q
+          in: query
+          description: Search in repository names
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of repositories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GithubRepo'
+                  meta:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /github/sync:
+    post:
+      tags:
+        - GitHub
+      summary: Sync GitHub namespace
+      description: |
+        Trigger full synchronization of a GitHub App installation.
+        This updates the list of repositories and their configurations.
+      operationId: syncGithubNamespace
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - installation_id
+              properties:
+                installation_id:
+                  type: string
+                  description: GitHub App installation ID
+      responses:
+        '202':
+          description: Sync initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                      installation_id:
+                        type: string
+                      namespace_id:
+                        type: string
+                        format: uuid
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Installation not found or access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: installation_id required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  components:
+    responses:
+      Unauthorized:
+        description: Authentication required or token invalid
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
+            example:
+              error: "Unauthorized"
+              code: 401
+
+      NotFound:
+        description: Resource not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
+            example:
+              error: "Resource not found"
+              code: 404
+
+      ValidationError:
+        description: Validation failed
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
+            example:
+              error: "Validation failed"
+              code: 422
+              details:
+                name: ["can't be blank"]

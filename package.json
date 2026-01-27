@@ -1,0 +1,31 @@
+{
+  "name": "parascope-client",
+  "version": "1.0.0",
+  "description": "TypeScript client for Parascope Cloud API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "parascope": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "node dist/cli.js",
+    "example:basic": "tsx examples/basic-usage.ts",
+    "example:create": "tsx examples/create-card.ts",
+    "example:bulk": "tsx examples/bulk-operations.ts",
+    "example:organize": "tsx examples/organize-workspace.ts"
+  },
+  "keywords": ["parascope", "api", "client"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.0.0",
+    "axios": "^1.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "typescript": "^5.3.3",
+    "tsx": "^4.7.0"
+  }
+}
